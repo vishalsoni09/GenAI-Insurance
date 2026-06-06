@@ -1,0 +1,7 @@
+<Solution>
+  <Project Path="genai-insurance.client/genai-insurance.client.esproj">
+    <Build />
+    <Deploy />
+  </Project>
+  <Project Path="GenAI-Insurance.Server/GenAI-Insurance.Server.csproj" />
+</Solution>
