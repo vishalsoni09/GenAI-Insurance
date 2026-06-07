@@ -30,6 +30,7 @@ export default function LoanEligibility(){
       const normalized = {
         eligible: d.eligible ?? d.Eligible ?? false,
         monthlyPayment: d.monthlyPayment ?? d.MonthlyPayment ?? 0,
+        interestRatePercent: d.interestRatePercent ?? d.InterestRatePercent ?? 0,
         reason: d.reason ?? d.Reason ?? ''
       };
       setResult(normalized);
@@ -37,7 +38,7 @@ export default function LoanEligibility(){
     catch (err) {
       console.error('Loan assess error', err);
       const serverMsg = err?.response?.data ?? err?.message ?? 'Error contacting server';
-      setResult({ eligible: false, reason: typeof serverMsg === 'string' ? serverMsg : JSON.stringify(serverMsg), monthlyPayment: 0 });
+      setResult({ eligible: false, reason: typeof serverMsg === 'string' ? serverMsg : JSON.stringify(serverMsg), monthlyPayment: 0, interestRatePercent: 0 });
     }
   };
 

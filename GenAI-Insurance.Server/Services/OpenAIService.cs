@@ -14,21 +14,50 @@ public class OpenAIService
     private readonly HttpClient _httpClient;
     private readonly IConfiguration _config;
     private readonly ILogger<OpenAIService> _logger;
+    // cache commonly-used AzureOpenAI settings
+    private readonly string? _endpoint;
+    private readonly string? _endpointNormalized;
+    private readonly string? _apiKey;
+    private readonly string? _deploymentName;
+    private readonly string _apiVersion;
+    private readonly string? _embeddingModel;
+    private readonly string? _embeddingDeploymentName;
+    private readonly bool _isFoundryOrOpenAIv1;
 
     public OpenAIService(HttpClient httpClient, IConfiguration config, ILogger<OpenAIService> logger)
     {
         _httpClient = httpClient;
         _config = config;
         _logger = logger;
+        _endpoint = _config["AzureOpenAI:Endpoint"]?.TrimEnd('/');
+        _endpointNormalized = _endpoint?.TrimEnd('/');
+        _apiKey = _config["AzureOpenAI:ApiKey"];
+        _deploymentName = _config["AzureOpenAI:DeploymentName"];
+        _apiVersion = _config["AzureOpenAI:ApiVersion"] ?? "2024-10-21";
+        _embeddingModel = _config["AzureOpenAI:EmbeddingModel"] ?? "text-embedding-3-small";
+        _embeddingDeploymentName = _config["AzureOpenAI:EmbeddingDeploymentName"] ?? null;
+        _isFoundryOrOpenAIv1 = (_endpointNormalized ?? string.Empty).Contains("/openai/v1", StringComparison.OrdinalIgnoreCase)
+            || (_endpointNormalized ?? string.Empty).Contains("services.ai.azure.com", StringComparison.OrdinalIgnoreCase);
+    }
+
+    private bool ResolveUseBearer()
+    {
+        if (!string.IsNullOrWhiteSpace(_config["AzureOpenAI:UseBearer"]))
+        {
+            if (bool.TryParse(_config["AzureOpenAI:UseBearer"], out var v)) return v;
+        }
+        // default to bearer for Foundry / services.ai endpoints
+        return (_endpointNormalized ?? string.Empty).Contains("services.ai.azure.com", StringComparison.OrdinalIgnoreCase)
+               || (_endpointNormalized ?? string.Empty).Contains("/openai/v1", StringComparison.OrdinalIgnoreCase);
     }
 
     // Compute embedding for a single input using text-embedding-3-small by default
     public async Task<float[]?> GetEmbeddingAsync(string input, string? modelOverride = null)
     {
-        var endpoint = _config["AzureOpenAI:Endpoint"]?.TrimEnd('/');
-        var apiKey = _config["AzureOpenAI:ApiKey"];
-        var apiVersion = _config["AzureOpenAI:ApiVersion"] ?? "2024-10-21";
-        var embeddingModel = modelOverride ?? _config["AzureOpenAI:EmbeddingModel"] ?? "text-embedding-3-small";
+        var endpoint = _endpoint;
+        var apiKey = _apiKey;
+        var apiVersion = _apiVersion;
+        var embeddingModel = modelOverride ?? _embeddingModel;
 
         if (string.IsNullOrWhiteSpace(endpoint) || string.IsNullOrWhiteSpace(apiKey))
         {
@@ -36,12 +65,11 @@ public class OpenAIService
             return null;
         }
 
-        var isFoundryOrOpenAIv1 = endpoint.Contains("/openai/v1", StringComparison.OrdinalIgnoreCase)
-            || endpoint.Contains("services.ai.azure.com", StringComparison.OrdinalIgnoreCase);
+        var isFoundryOrOpenAIv1 = _isFoundryOrOpenAIv1;
 
         string url;
         object payload;
-        var normalized = endpoint.TrimEnd('/');
+        var normalized = _endpointNormalized ?? endpoint.TrimEnd('/');
         if (isFoundryOrOpenAIv1)
         {
             url = normalized.EndsWith("/openai/v1", StringComparison.OrdinalIgnoreCase) ? normalized + "/embeddings" : normalized + "/openai/v1/embeddings";
@@ -55,9 +83,7 @@ public class OpenAIService
             payload = new { input };
         }
 
-        bool useBearer;
-        if (!string.IsNullOrWhiteSpace(_config["AzureOpenAI:UseBearer"])) bool.TryParse(_config["AzureOpenAI:UseBearer"], out useBearer);
-        else useBearer = endpoint.Contains("services.ai.azure.com", StringComparison.OrdinalIgnoreCase) || endpoint.Contains("/openai/v1", StringComparison.OrdinalIgnoreCase);
+        bool useBearer = ResolveUseBearer();
 
         using var req = new HttpRequestMessage(HttpMethod.Post, url);
         if (useBearer) req.Headers.Authorization = new AuthenticationHeaderValue("Bearer", apiKey);
@@ -96,20 +122,10 @@ public class OpenAIService
     // Return raw deployments list from the Azure OpenAI resource to help diagnostics
     public async Task<string> ListDeploymentsRawAsync()
     {
-        var endpoint = _config["AzureOpenAI:Endpoint"]?.TrimEnd('/');
-        var apiKey = _config["AzureOpenAI:ApiKey"];
-        var apiVersion = _config["AzureOpenAI:ApiVersion"] ?? "2024-10-21";
-        bool useBearer;
-        if (!string.IsNullOrWhiteSpace(_config["AzureOpenAI:UseBearer"]))
-        {
-            bool.TryParse(_config["AzureOpenAI:UseBearer"], out useBearer);
-        }
-        else
-        {
-            // default to bearer for Foundry / services.ai endpoints
-            useBearer = endpoint.Contains("services.ai.azure.com", StringComparison.OrdinalIgnoreCase)
-                       || endpoint.Contains("/openai/v1", StringComparison.OrdinalIgnoreCase);
-        }
+        var endpoint = _endpoint;
+        var apiKey = _apiKey;
+        var apiVersion = _apiVersion;
+        bool useBearer = ResolveUseBearer();
 
         if (string.IsNullOrWhiteSpace(endpoint) || string.IsNullOrWhiteSpace(apiKey))
         {
@@ -161,10 +177,10 @@ public class OpenAIService
     // Call Azure OpenAI Chat Completions endpoint and return parsed response.
     public async Task<Models.OpenAIResponse> GetChatCompletionRawAsync(string systemPrompt, string userPrompt)
     {
-        var endpoint = _config["AzureOpenAI:Endpoint"]?.TrimEnd('/');
-        var apiKey = _config["AzureOpenAI:ApiKey"];
-        var deploymentName = _config["AzureOpenAI:DeploymentName"];
-        var apiVersion = _config["AzureOpenAI:ApiVersion"] ?? "2024-10-21";
+        var endpoint = _endpoint;
+        var apiKey = _apiKey;
+        var deploymentName = _deploymentName;
+        var apiVersion = _apiVersion;
 
         if (string.IsNullOrWhiteSpace(endpoint) || string.IsNullOrWhiteSpace(apiKey) || string.IsNullOrWhiteSpace(deploymentName))
         {
@@ -177,13 +193,12 @@ public class OpenAIService
         // Support two endpoint styles:
         // - Azure OpenAI (deployments REST): {endpoint}/openai/deployments/{deployment}/chat/completions?api-version=...
         // - Azure Foundry / OpenAI-compatible: {endpoint}/openai/v1/chat/completions with payload.model = deploymentName
-        var isFoundryOrOpenAIv1 = endpoint.Contains("/openai/v1", StringComparison.OrdinalIgnoreCase)
-            || endpoint.Contains("services.ai.azure.com", StringComparison.OrdinalIgnoreCase);
+        var isFoundryOrOpenAIv1 = _isFoundryOrOpenAIv1;
 
         string url;
         object payload;
 
-        var normalized = endpoint.TrimEnd('/');
+        var normalized = _endpointNormalized ?? endpoint.TrimEnd('/');
         if (isFoundryOrOpenAIv1)
         {
             // use OpenAI-compatible v1 path and include model in payload
@@ -222,16 +237,7 @@ public class OpenAIService
             };
         }
 
-        bool useBearerChat;
-        if (!string.IsNullOrWhiteSpace(_config["AzureOpenAI:UseBearer"]))
-        {
-            bool.TryParse(_config["AzureOpenAI:UseBearer"], out useBearerChat);
-        }
-        else
-        {
-            useBearerChat = endpoint.Contains("services.ai.azure.com", StringComparison.OrdinalIgnoreCase)
-                            || endpoint.Contains("/openai/v1", StringComparison.OrdinalIgnoreCase);
-        }
+        bool useBearerChat = ResolveUseBearer();
 
         using var request = new HttpRequestMessage(HttpMethod.Post, url);
         if (useBearerChat)
