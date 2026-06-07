@@ -17,6 +17,24 @@ public class DbService
             ?? throw new InvalidOperationException("Connection string 'Default' not found.");
     }
 
+    public async Task<string> GetDistinctBankNamesAsync()
+    {
+        var names = new List<string>();
+        await using var conn = new SqlConnection(_connectionString);
+        await conn.OpenAsync();
+
+        const string sql = @"SELECT DISTINCT BankName FROM InsuranceData ORDER BY BankName;";
+        await using var cmd = new SqlCommand(sql, conn);
+        await using var reader = await cmd.ExecuteReaderAsync();
+        while (await reader.ReadAsync())
+        {
+            names.Add(reader["BankName"]?.ToString() ?? string.Empty);
+        }
+
+        if (names.Count == 0) return "No banks found.";
+        return string.Join(", ", names.Where(n => !string.IsNullOrWhiteSpace(n)));
+    }
+
     public async Task<int> GetBankCountAsync()
     {
         await using var conn = new SqlConnection(_connectionString);

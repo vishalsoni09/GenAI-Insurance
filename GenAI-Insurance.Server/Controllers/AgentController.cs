@@ -23,23 +23,10 @@ public class AgentController : ControllerBase
     }
 
     [HttpPost("chat")]
-    public ActionResult<Models.ChatResponse> Chat(ChatRequest req)
+    public async Task<ActionResult<Models.ChatResponse>> Chat(ChatRequest req)
     {
-        var res = _agent.Handle(req.Question);
-
-        // If the handler returned an OpenAIResponse, extract first choice content
-        if (res is GenAI_Insurance.Server.Models.OpenAIResponse openai)
-        {
-            var content = openai.Choices?.FirstOrDefault()?.Message?.Content ?? string.Empty;
-            return Ok(new Models.ChatResponse { Answer = content, Source = "Azure OpenAI", Score = "" });
-        }
-
-        if (res is not null && res is IDictionary<string, object>)
-        {
-            return Ok(new Models.ChatResponse { Answer = System.Text.Json.JsonSerializer.Serialize(res), Source = "agent", Score = "" });
-        }
-
-        var txt = res?.GetType().GetProperty("reply")?.GetValue(res)?.ToString() ?? res?.ToString() ?? "";
-        return Ok(new Models.ChatResponse { Answer = txt, Source = "agent", Score = "" });
+        // Use the async ProcessAsync path so DB-backed queries (e.g. bank counts) are executed
+        var resp = await _agent.ProcessAsync(req);
+        return Ok(resp);
     }
 }
