@@ -15,6 +15,12 @@
     <PackageReference Include="Microsoft.AspNetCore.SpaProxy">
       <Version>10.*-*</Version>
     </PackageReference>
+    <PackageReference Include="Microsoft.EntityFrameworkCore.SqlServer" Version="10.0.0" />
+    <PackageReference Include="Microsoft.EntityFrameworkCore.Tools" Version="10.0.0">
+      <PrivateAssets>all</PrivateAssets>
+      <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
+    </PackageReference>
+    <PackageReference Include="Microsoft.Data.SqlClient" Version="6.3.0" />
   </ItemGroup>
 
   <ItemGroup>
@@ -22,5 +28,27 @@
       <ReferenceOutputAssembly>false</ReferenceOutputAssembly>
     </ProjectReference>
   </ItemGroup>
+
+  <!-- Build client and copy to wwwroot during server build -->
+  <Target Name="BuildClient" BeforeTargets="Build">
+    <Message Importance="high" Text="Building client app..." />
+    <Exec WorkingDirectory="$(SpaRoot)" Command="cmd /c npm install" />
+    <Exec WorkingDirectory="$(SpaRoot)" Command="cmd /c npm run build" />
+  </Target>
+
+  <Target Name="CopyClientToWwwroot" AfterTargets="Build">
+    <PropertyGroup>
+      <ClientDist>$(SpaRoot)\dist</ClientDist>
+      <WwwRoot>$(MSBuildThisFileDirectory)wwwroot</WwwRoot>
+    </PropertyGroup>
+    <ItemGroup>
+      <ClientDistFiles Include="$(ClientDist)\**\*" />
+    </ItemGroup>
+    <MakeDir Directories="$(WwwRoot)" />
+    <RemoveDir Directories="$(WwwRoot)\*" ContinueOnError="true" />
+    <Copy SourceFiles="@(ClientDistFiles)" DestinationFolder="$(WwwRoot)\%(RecursiveDir)" SkipUnchangedFiles="true">
+      <Output TaskParameter="CopiedFiles" ItemName="CopiedClientFiles" />
+    </Copy>
+  </Target>
 
 </Project>

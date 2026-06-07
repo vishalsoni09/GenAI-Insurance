@@ -47,6 +47,12 @@ export default defineConfig({
     },
     server: {
         proxy: {
+            // proxy API calls to backend
+            '^/api': {
+                target,
+                secure: false,
+                changeOrigin: true
+            },
             '^/weatherforecast': {
                 target,
                 secure: false
